@@ -57,7 +57,7 @@ echo "$ARGO_JSON" > /dashboard/argo.json
 cat > /dashboard/argo.yml << EOF
 tunnel: $(cut -d '"' -f12 <<< "$ARGO_JSON")
 credentials-file: /dashboard/argo.json
-protocol: h2mux
+protocol: http2
 
 ingress:
   - hostname: $WEB_DOMAIN
@@ -109,6 +109,8 @@ http {
       grpc_socket_keepalive on;
       grpc_pass grpc://grpcservers;
     }
+    access_log  /dev/null;
+    error_log   /dev/null;
   }
 }
 EOF
@@ -140,10 +142,17 @@ git clone https://\$GH_PAT@github.com/\$GH_BACKUP_USER/\$GH_REPO.git --depth 1
 hint "\n \$(supervisorctl stop nezha) \n"
 sleep 3
 
-# github 备份并重启面板
+# 检查更新面板主程序 app，然后 github 备份数据库，最后重启面板
 if [[ \$(supervisorctl status nezha) =~ STOPPED ]]; then
+  [ -e /version ] && NOW=\$(cat /version)
+  LATEST=\$(wget -qO- https://raw.githubusercontent.com/fscarmen2/Argo-Nezha-Service-Container/main/app/README.md)
+  if [[ "\$LATEST" =~ ^v([0-9]{1,3}\.){2}[0-9]{1,3}\$ && "\$NOW" != "\$LATEST" ]]; then
+    hint "\n Renew dashboard app to \$LATEST \n"
+    wget -O /dashboard/app https://raw.githubusercontent.com/fscarmen2/Argo-Nezha-Service-Container/main/app/app-\$(arch)
+    echo "\$LATEST" > /version
+  fi
   TIME=\$(date "+%Y-%m-%d-%H:%M:%S")
-  tar czvf \$GH_REPO/dashboard-\$TIME.tar.gz /dashboard
+  tar czvf \$GH_REPO/dashboard-\$TIME.tar.gz --exclude='/dashboard/*.sh' --exclude='/dashboard/app' /dashboard
   hint "\n \$(supervisorctl start nezha) \n"
   cd \$GH_REPO
   [ -e ./.git/index.lock ] && rm -f ./.git/index.lock
@@ -199,7 +208,7 @@ wget --header="Authorization: token \$GH_PAT" --header='Accept: application/vnd.
 
 if [ -e /tmp/backup.tar.gz ]; then
   hint "\n \$(supervisorctl stop nezha) \n"
-  tar xzvf /tmp/backup.tar.gz --exclude='dashboard/*.sh' -C /
+  tar xzvf /tmp/backup.tar.gz --exclude='/dashboard/*.sh' --exclude='/dashboard/app' -C /
   rm -f /tmp/backup.tar.gz
   hint "\n \$(supervisorctl start nezha) \n"
 fi
@@ -217,36 +226,36 @@ fi
 cat > /etc/supervisor/conf.d/damon.conf << EOF
 [supervisord]
 nodaemon=true
-logfile=/var/log/supervisord.log
+logfile=/dev/null
 pidfile=/run/supervisord.pid
 
 [program:nginx]
 command=nginx -g "daemon off;"
 autostart=true
 autorestart=true
-stderr_logfile=/var/log/nginx.err.log
-stdout_logfile=/var/log/nginx.out.log
+stderr_logfile=/dev/null
+stdout_logfile=/dev/null
 
 [program:nezha]
 command=/dashboard/app
 autostart=true
 autorestart=true
-stderr_logfile=/var/log/nezha.err.log
-stdout_logfile=/var/log/nezha.out.log
+stderr_logfile=/dev/null
+stdout_logfile=/dev/null
 
 [program:agent]
 command=/dashboard/nezha-agent -s localhost:5555 -p abcdefghijklmnopqr
 autostart=true
 autorestart=true
-stderr_logfile=/var/log/agent.err.log
-stdout_logfile=/var/log/agent.out.log
+stderr_logfile=/dev/null
+stdout_logfile=/dev/null
 
 [program:argo]
 command=cloudflared tunnel --edge-ip-version auto --config /dashboard/argo.yml run
 autostart=true
 autorestart=true
-stderr_logfile=/var/log/web_argo.err.log
-stdout_logfile=/var/log/web_argo.out.log
+stderr_logfile=/dev/null
+stdout_logfile=/dev/null
 EOF
 
 # 赋执行权给 sh  文件
