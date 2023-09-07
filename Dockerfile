@@ -1,5 +1,3 @@
-# reference: https://git-scm.com/docs/git-config
-# https://stackoverflow.com/questions/60187612/how-to-set-git-compression-level
 FROM ghcr.io/naiba/nezha-dashboard
 
 EXPOSE 80
